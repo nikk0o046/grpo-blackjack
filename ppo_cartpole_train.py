@@ -1,31 +1,21 @@
 import yaml, time, torch
 import gymnasium as gym
 import utils as u
-from ppo_agent import Agent, Policy
+from ppo_cartpole_agent import Agent, Policy
 import numpy as np 
 
 from pathlib import Path
 work_dir = Path().cwd()/'results'
 
-class Struct:
-    def __init__(self, **entries):
-        self.entries = entries
-        self.__dict__.update(entries)
-    
-    def __str__(self):
-        return str(self.entries)
-        
-def setup(cfg_path, cfg_args={}, print_info=False):
-    with open(cfg_path, 'r') as f:
-        d = yaml.safe_load(f)
-        d.update(cfg_args)
-        cfg = Struct(**d)
+
+def setup(cfg_args={}, print_info=False):
+    cfg = cfg_args
     
     # Setting library seeds
-    if cfg.seed == None:
+    if cfg["seed"] == None:
         seed = np.random.randint(low=1, high=1000)
     else:
-        seed = cfg.seed
+        seed = cfg["seed"]
     
     print("Numpy/Torch/Random Seed: ", seed)
     u.set_seed(seed) # set seed
@@ -33,38 +23,39 @@ def setup(cfg_path, cfg_args={}, print_info=False):
     run_id = int(time.time())
 
     # create folders if needed
-    if cfg.save_model: u.make_dir(work_dir/"model")
-    if cfg.save_logging:
+    if cfg["save_model"]: 
+        u.make_dir(work_dir/"model")
+    if cfg["save_logging"]:
         u.make_dir(work_dir/"logging")
         L = u.Logger() # create a simple logger to record stats
 
     # use wandb to store stats; we aren't currently logging anything into wandb during testing (might be useful to
     # have the cfg.testing check here if someone forgets to set use_wandb=false)
     # create env
-    env = gym.make(cfg.env_name, 
-                    max_episode_steps=cfg.max_episode_steps,
+    env = gym.make(cfg["env_name"], 
+                    max_episode_steps=cfg["max_episode_steps"],
                     render_mode='rgb_array')
 
-    if cfg.save_video:
+    if cfg["save_video"]:
         # During testing, save every episode
-        if cfg.testing:
+        if cfg["testing"]:
             ep_trigger = 1
-            video_path = work_dir/'video'/cfg.env_name/'test'
+            video_path = work_dir/'video'/cfg["env_name"]/'test'
         # During training, save every 50th episode
         else:
             ep_trigger = 50
-            video_path = work_dir/'video'/cfg.env_name/'train'
+            video_path = work_dir/'video'/cfg["env_name"]/'train'
             
         env = gym.wrappers.RecordVideo(env, video_path,
                                         episode_trigger=lambda x: x % ep_trigger == 0, # save video every 50 episode
-                                        name_prefix=cfg.exp_name, disable_logger=True)
+                                        name_prefix=cfg["exp_name"], disable_logger=True)
     # Get dimensionalities of actions and observations
     action_space_dim = u.get_space_dim(env.action_space)
     observation_space_dim = u.get_space_dim(env.observation_space)
 
     # Instantiate agent and its policy
     policy = Policy(observation_space_dim, action_space_dim)
-    agent = Agent(policy, cfg.batch_size)
+    agent = Agent(policy, cfg["batch_size"])
     
     # Print some stuff
     if print_info:
@@ -112,32 +103,32 @@ def train_iteration(agent, env, min_update_samples=2000, max_episode_steps=200, 
     return update_info
 
 # Training
-def train(cfg_path, cfg_args={}):
+def train(cfg_args={}):
         
-    env, policy, agent, cfg = setup(cfg_path, cfg_args=cfg_args, print_info=True)
+    env, policy, agent, cfg = setup(cfg_args=cfg_args, print_info=True)
 
-    if cfg.save_logging: 
+    if cfg["save_logging"]: 
         L = u.Logger() # create a simple logger to record stats
     
-    for ep in range(cfg.train_episodes+1):
-        train_info = train_iteration(agent, env, min_update_samples=cfg.min_update_samples, max_episode_steps=cfg.max_episode_steps, seed=cfg.seed)
+    for ep in range(cfg["train_episodes"]+1):
+        train_info = train_iteration(agent, env, min_update_samples=cfg["min_update_samples"], max_episode_steps=cfg["max_episode_steps"], seed=cfg["seed"])
         train_info.update({'episodes': ep})
 
-        if not cfg.silent:
+        if not cfg["silent"]:
             if ep % 5 == 0:
                 print(f"Episode {ep} finished. Total reward: {train_info['ep_reward']} ({train_info['timesteps']} timesteps)")
 
-        if cfg.save_logging:
+        if cfg["save_logging"]:
             L.log(**train_info)
 
     # Save the model
-    if cfg.save_model:
-        model_path = work_dir/'model'/f'{cfg.model_name}_params.pt'
+    if cfg["save_model"]:
+        model_path = work_dir/'model'/f'{cfg["model_name"]}_params.pt'
         torch.save(policy.state_dict(), model_path)
         print("Model saved to", model_path)
 
-    if cfg.save_logging:
-        logging_path = work_dir/'logging'/f'{cfg.model_name}_{cfg.seed}'
+    if cfg["save_logging"]:
+        logging_path = work_dir/'logging'/f'{cfg["model_name"]}_{cfg["seed"]}'
         L.save(logging_path)
 
     print("------Training finished.------")
@@ -149,7 +140,7 @@ def test(episodes, cfg_path, cfg_args={}):
     env, policy, agent, cfg  = setup(cfg_path, cfg_args=cfg_args, print_info=False)
     
     # Testing 
-    model_path = work_dir/'model'/f'{cfg.model_name}_params.pt'
+    model_path = work_dir/'model'/f'{cfg["model_name"]}_params.pt'
     print("Loading model from", model_path, "...")
  
     # load model
@@ -160,15 +151,15 @@ def test(episodes, cfg_path, cfg_args={}):
     total_test_reward, total_test_len = 0, 0
     for ep in range(episodes):
         done = False
-        if cfg.seed == None:
+        if cfg["seed"] == None:
             seed = np.random.randint(low=1, high=1000)
         else:
-            seed = cfg.seed
+            seed = cfg["seed"]
             
         observation, _ = env.reset(seed=seed)
 
         test_reward, test_len = 0, 0
-        for t in range(cfg.max_episode_steps):
+        for t in range(cfg["max_episode_steps"]):
             # Similar to the training loop above -
             # get the action, act on the environment, save total reward
             # (evaluation=True makes the agent always return what it thinks to be

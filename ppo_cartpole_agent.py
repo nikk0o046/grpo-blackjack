@@ -47,7 +47,7 @@ class Policy(torch.nn.Module):
 
 class Agent(object):
     def __init__(self, policy, batch_size=64, silent=False):
-        self.train_device = "cpu"  # ""cuda" if torch.cuda.is_available() else "cpu"
+        self.train_device = "cuda"  # ""cuda" if torch.cuda.is_available() else "cpu"
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         self.batch_size = batch_size
@@ -68,12 +68,12 @@ class Agent(object):
         if not self.silent:
             print("Updating the policy...")
 
-        self.states = torch.stack(self.states)
-        self.actions = torch.stack(self.actions).squeeze()
-        self.next_states = torch.stack(self.next_states)
-        self.rewards = torch.stack(self.rewards).squeeze()
-        self.dones = torch.stack(self.dones).squeeze()
-        self.action_log_probs = torch.stack(self.action_log_probs).squeeze()
+        self.states = torch.stack(self.states).to(self.train_device)
+        self.actions = torch.stack(self.actions).squeeze().to(self.train_device)
+        self.next_states = torch.stack(self.next_states).to(self.train_device)
+        self.rewards = torch.stack(self.rewards).squeeze().to(self.train_device)
+        self.dones = torch.stack(self.dones).squeeze().to(self.train_device)
+        self.action_log_probs = torch.stack(self.action_log_probs).squeeze().to(self.train_device)
 
         for e in range(self.epochs):
             self.ppo_epoch()
@@ -95,7 +95,7 @@ class Agent(object):
             _, next_values = self.policy(self.next_states)
             values = values.squeeze()
             next_values = next_values.squeeze()
-        gaes = torch.zeros(1)
+        gaes = torch.zeros(1).to(self.train_device)
         timesteps = len(self.rewards)
         for t in range(timesteps-1, -1, -1):
             deltas = self.rewards[t] + self.gamma * next_values[t] *\
@@ -103,7 +103,7 @@ class Agent(object):
             gaes = deltas + self.gamma*self.tau*(1-self.dones[t])*gaes
             returns.append(gaes + values[t])
 
-        return torch.Tensor(list(reversed(returns)))
+        return torch.Tensor(list(reversed(returns))).to(self.train_device)
 
     def ppo_epoch(self):
         indices = list(range(len(self.states)))
