@@ -51,7 +51,7 @@ class Agent(object):
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         self.batch_size = batch_size
-        self.gamma = 0.98
+        self.gamma = 1
         self.tau = 0.95
         self.clip = 0.2
         self.epochs = 12
