@@ -47,12 +47,12 @@ class Policy(torch.nn.Module):
 
 class Agent(object):
     def __init__(self, policy, batch_size=64, silent=False):
-        self.train_device = "cuda"  # ""cuda" if torch.cuda.is_available() else "cpu"
+        self.train_device = "cuda"
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         self.batch_size = batch_size
-        self.gamma = 1
-        self.tau = 0.95
+        self.gamma = 1.0
+        self.tau = 0.0
         self.clip = 0.2
         self.epochs = 12
         self.running_mean = None
