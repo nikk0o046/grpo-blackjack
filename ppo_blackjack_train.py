@@ -115,7 +115,7 @@ def train(cfg_args={}):
     reporting_interval = 500
     recent_rewards = deque(maxlen=reporting_interval)
 
-    for ep in range(cfg["train_episodes"]+1):
+    for ep in range(cfg["train_episodes"]):
         train_info = train_iteration(agent, env, min_update_samples=cfg["min_update_samples"], max_episode_steps=cfg["max_episode_steps"], seed=cfg["seed"])
         train_info.update({'episodes': ep})
         recent_rewards.append(train_info['ep_reward'])
