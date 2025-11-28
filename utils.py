@@ -69,37 +69,41 @@ def plot_reward(path, env_name):
     plt.title(env_name, fontweight=12)
     plt.plot()
 
-def create_grids(agent, usable_ace=False):
-    """Create value and policy grid given an agent."""
-    # convert our state-action values to state values
-    # and build a policy dictionary that maps observations to actions
-    state_value = defaultdict(float)
-    policy = defaultdict(int)
-    for obs, action_values in agent.q_values.items():
-        state_value[obs] = float(np.max(action_values))
-        policy[obs] = int(np.argmax(action_values))
+def create_grids_nn(policy, usable_ace=False):
+    policy.eval()
 
-    player_count, dealer_count = np.meshgrid(
-        # players count, dealers face-up card
+    state_value = {}
+    policy_action = {}
+
+    for player_sum in range(12, 22):
+        for dealer_card in range(1, 11):
+            obs = np.array([player_sum, dealer_card, int(usable_ace)], dtype=np.float32)
+            obs_t = torch.tensor(obs).unsqueeze(0).to(next(policy.parameters()).device)
+
+            with torch.no_grad():
+                action_dist, value = policy(obs_t)
+
+            state_value[(player_sum, dealer_card, usable_ace)] = float(value.item())
+            policy_action[(player_sum, dealer_card, usable_ace)] = int(action_dist.probs.argmax().item())
+
+    player_grid, dealer_grid = np.meshgrid(
         np.arange(12, 22),
         np.arange(1, 11),
     )
 
-    # create the value grid for plotting
-    value = np.apply_along_axis(
-        lambda obs: state_value[(obs[0], obs[1], usable_ace)],
+    value_matrix = np.apply_along_axis(
+        lambda arr: state_value[(arr[0], arr[1], usable_ace)],
         axis=2,
-        arr=np.dstack([player_count, dealer_count]),
+        arr=np.dstack([player_grid, dealer_grid]),
     )
-    value_grid = player_count, dealer_count, value
 
-    # create the policy grid for plotting
-    policy_grid = np.apply_along_axis(
-        lambda obs: policy[(obs[0], obs[1], usable_ace)],
+    policy_matrix = np.apply_along_axis(
+        lambda arr: policy_action[(arr[0], arr[1], usable_ace)],
         axis=2,
-        arr=np.dstack([player_count, dealer_count]),
+        arr=np.dstack([player_grid, dealer_grid]),
     )
-    return value_grid, policy_grid
+
+    return (player_grid, dealer_grid, value_matrix), policy_matrix
 
 # Source: https://gymnasium.farama.org/v0.26.3/tutorials/blackjack_tutorial/
 def create_plots(value_grid, policy_grid, title: str):
