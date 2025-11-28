@@ -123,7 +123,7 @@ def train(cfg_args={}):
         if not cfg["silent"]:
             if ep % reporting_interval == 0:
                 avg_reward = float(np.mean(recent_rewards))
-                print(f"Episode {ep} finished. Average reward of last 100 steps: {avg_reward} ({train_info['timesteps']} timesteps)")
+                print(f"Episode {ep} finished. Average reward of last {reporting_interval} steps: {avg_reward} ({train_info['timesteps']} timesteps)")
 
         if cfg["save_logging"]:
             L.log(**train_info)
