@@ -45,15 +45,16 @@ class Agent(object):
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         self.batch_size = batch_size
-        self.gamma = 0.98
-        self.tau = 0.95
-        self.clip = 0.2
+        # self.gamma = 0.98
+        # self.tau = 0.95
+        # self.clip = 0.2
         self.epochs = 12
         self.running_mean = None
         self.states = []
         self.actions = []
         self.next_states = []
         self.rewards = []
+        self.advantages = []
         self.dones = []
         self.action_log_probs = []
         self.silent = silent
@@ -66,10 +67,11 @@ class Agent(object):
         self.actions = torch.stack(self.actions).squeeze().to(self.train_device)
         self.next_states = torch.stack(self.next_states).to(self.train_device)
         self.rewards = torch.stack(self.rewards).squeeze().to(self.train_device)
+        self.advantages = self.compute_advantages()
         self.dones = torch.stack(self.dones).squeeze().to(self.train_device)
         self.action_log_probs = torch.stack(self.action_log_probs).squeeze().to(self.train_device)
 
-        for e in range(self.epochs):
+        for _ in range(self.epochs):
             self.ppo_epoch()
 
         # Clear the replay buffer
@@ -81,6 +83,9 @@ class Agent(object):
         self.action_log_probs = []
         if not self.silent:
             print("Updating finished!")
+
+    def compute_advantages():
+        pass
 
     def compute_returns(self):
         returns = []
