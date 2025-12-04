@@ -14,10 +14,6 @@ class Policy(torch.nn.Module):
         self.fc2_a = torch.nn.Linear(hidden_size, hidden_size)
         self.fc3_a = torch.nn.Linear(hidden_size, action_space)
 
-        self.fc1_c = torch.nn.Linear(state_space, hidden_size)
-        self.fc2_c = torch.nn.Linear(hidden_size, hidden_size)
-        self.fc3_c = torch.nn.Linear(hidden_size, 1)
-
         self.init_weights()
 
     def init_weights(self):
@@ -50,7 +46,9 @@ class Agent(object):
         # self.clip = 0.2
         self.epochs = 12
         self.running_mean = None
+        self.episode_nums = []
         self.states = []
+        self.starting_states = []
         self.actions = []
         self.next_states = []
         self.rewards = []
@@ -67,7 +65,7 @@ class Agent(object):
         self.actions = torch.stack(self.actions).squeeze().to(self.train_device)
         self.next_states = torch.stack(self.next_states).to(self.train_device)
         self.rewards = torch.stack(self.rewards).squeeze().to(self.train_device)
-        self.advantages = self.compute_advantages()
+        self.advantages = torch.tensor(self.compute_advantages()).to(self.train_device)
         self.dones = torch.stack(self.dones).squeeze().to(self.train_device)
         self.action_log_probs = torch.stack(self.action_log_probs).squeeze().to(self.train_device)
 
@@ -84,8 +82,47 @@ class Agent(object):
         if not self.silent:
             print("Updating finished!")
 
-    def compute_advantages():
-        pass
+    def compute_advantages(self) -> list:
+        # 1. group episodes by starting state
+        # 2. calculate average reward and std of rewards for every group
+        # 3. loop over all final steps and calculate advantage as episode (reward - avg reward) / std
+        # 4. distribute this reward to all time steps
+    
+        # 1
+        state_rewards = {}
+        for i in range(len(self.states)):
+            if self.dones[i]:
+                key = tuple(self.starting_states[i].tolist())
+                
+                final_reward = self.rewards[i].item()
+                if key not in state_rewards:
+                    state_rewards.update({key: [final_reward]})
+                else:
+                    state_rewards[key].append(final_reward)
+                
+        # 2
+        state_stats = {}
+        for starting_state, rewards in state_rewards.items():
+            mean = np.mean(rewards)
+            std = np.std(rewards)
+            state_stats[starting_state] = {"mean": mean, "std": std}
+
+        # 3
+        episode_advantages = {}
+        for i in range(len(self.states)):
+            if self.dones[i]:
+                key = tuple(self.starting_states[i].tolist())
+                # calculate advantage, avoid zero division error
+                advantage = (self.rewards[i].item() - state_stats[key]["mean"]) / max(state_stats[key]["std"], 1e-8)
+                episode_advantages.update({self.episode_nums[i]: advantage})
+ 
+        # 4
+        step_advantages = []
+        for i in range(len(self.states)):
+            step_advantage = episode_advantages[self.episode_nums[i]]
+            step_advantages.append(step_advantage)
+
+        return step_advantages
 
     def compute_returns(self):
         returns = []
@@ -155,8 +192,10 @@ class Agent(object):
         action = action.item()
         return action, aprob
 
-    def store_outcome(self, state, action, next_state, reward, action_log_prob, done):
+    def store_outcome(self, episode_num, state, action, next_state, reward, action_log_prob, done, starting_state):
+        self.episode_nums.append(episode_num)
         self.states.append(torch.from_numpy(state).float())
+        self.starting_states.append(torch.from_numpy(starting_state).float())
         self.actions.append(torch.Tensor([action]))
         self.action_log_probs.append(action_log_prob.detach())
         self.rewards.append(torch.Tensor([reward]).float())
