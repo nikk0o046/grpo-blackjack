@@ -43,7 +43,7 @@ class Agent(object):
         self.batch_size = batch_size
         # self.gamma = 0.98
         # self.tau = 0.95
-        # self.clip = 0.2
+        self.clip = 0.2
         self.epochs = 12
         self.running_mean = None
         self.episode_nums = []
@@ -70,13 +70,16 @@ class Agent(object):
         self.action_log_probs = torch.stack(self.action_log_probs).squeeze().to(self.train_device)
 
         for _ in range(self.epochs):
-            self.ppo_epoch()
+            self.grpo_epoch()
 
         # Clear the replay buffer
+        self.episode_nums = []
         self.states = []
+        self.starting_states = []
         self.actions = []
         self.next_states = []
         self.rewards = []
+        self.advantages = []
         self.dones = []
         self.action_log_probs = []
         if not self.silent:
@@ -124,65 +127,39 @@ class Agent(object):
 
         return step_advantages
 
-    def compute_returns(self):
-        returns = []
-        with torch.no_grad():
-            _, values = self.policy(self.states)
-            _, next_values = self.policy(self.next_states)
-            values = values.squeeze()
-            next_values = next_values.squeeze()
-        gaes = torch.zeros(1).to(self.train_device)
-        timesteps = len(self.rewards)
-        for t in range(timesteps-1, -1, -1):
-            deltas = self.rewards[t] + self.gamma * next_values[t] *\
-                     (1-self.dones[t]) - values[t]
-            gaes = deltas + self.gamma*self.tau*(1-self.dones[t])*gaes
-            returns.append(gaes + values[t])
-
-        return torch.Tensor(list(reversed(returns))).to(self.train_device)
-
-    def ppo_epoch(self):
+    def grpo_epoch(self):
         indices = list(range(len(self.states)))
-        returns = self.compute_returns()
         while len(indices) >= self.batch_size:
             # Sample a minibatch
             batch_indices = np.random.choice(indices, self.batch_size,
                     replace=False)
 
             # Do the update
-            self.ppo_update(self.states[batch_indices], self.actions[batch_indices],
-                self.rewards[batch_indices], self.next_states[batch_indices],
-                self.dones[batch_indices], self.action_log_probs[batch_indices],
-                returns[batch_indices])
+            self.grpo_update(
+                self.states[batch_indices],
+                self.actions[batch_indices],
+                self.action_log_probs[batch_indices],
+                self.advantages[batch_indices],
+            )
 
             # Drop the batch indices
             indices = [i for i in indices if i not in batch_indices]
 
-    def ppo_update(self, states, actions, rewards, next_states, dones, old_log_probs, targets):
-        action_dists, values = self.policy(states)
-        values = values.squeeze()
-        new_action_probs = action_dists.log_prob(actions)
-        ratio = torch.exp(new_action_probs - old_log_probs)
+    def grpo_update(self, states, actions, old_log_probs, advantages):
+        action_dists = self.policy.forward(states)
+        # using log probabilities for numerical stability
+        new_log_probs = action_dists.log_prob(actions)
+        ratio = torch.exp(new_log_probs - old_log_probs)
         clipped_ratio = torch.clamp(ratio, 1-self.clip, 1+self.clip)
-
-        advantages = targets - values
-        advantages -= advantages.mean()
-        advantages /= advantages.std()+1e-8
-        advantages = advantages.detach()
+        
         policy_objective = -torch.min(ratio*advantages, clipped_ratio*advantages)
-
-        value_loss = F.smooth_l1_loss(values, targets, reduction="mean")
-
-        policy_objective = policy_objective.mean()
-        entropy = action_dists.entropy().mean()
-        loss = policy_objective + 0.5*value_loss - 0.01*entropy
-
+        loss = policy_objective.mean()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
     def get_action(self, observation, evaluation=False):
-        x = torch.from_numpy(observation).float().to(self.train_device)
+        x = torch.tensor(observation).float().to(self.train_device)
         action_dist = self.policy.forward(x)
         if evaluation:
             action = action_dist.probs.argmax()
@@ -194,11 +171,10 @@ class Agent(object):
 
     def store_outcome(self, episode_num, state, action, next_state, reward, action_log_prob, done, starting_state):
         self.episode_nums.append(episode_num)
-        self.states.append(torch.from_numpy(state).float())
-        self.starting_states.append(torch.from_numpy(starting_state).float())
+        self.states.append(torch.tensor(state).float())
+        self.starting_states.append(torch.tensor(starting_state).float())
         self.actions.append(torch.Tensor([action]))
         self.action_log_probs.append(action_log_prob.detach())
         self.rewards.append(torch.Tensor([reward]).float())
         self.dones.append(torch.Tensor([done]))
-        self.next_states.append(torch.from_numpy(next_state).float())
-
+        self.next_states.append(torch.tensor(next_state).float())
