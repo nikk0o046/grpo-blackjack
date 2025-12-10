@@ -109,7 +109,7 @@ def train(cfg_args={}):
         L = u.Logger() # create a simple logger to record stats
 
     # track rewards for the most recent X episodes
-    reporting_interval = 500
+    reporting_interval = 5000
     recent_rewards = deque(maxlen=reporting_interval)
 
     for ep in range(cfg["train_episodes"]):

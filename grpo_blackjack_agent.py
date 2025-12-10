@@ -43,8 +43,8 @@ class Agent(object):
         self.batch_size = batch_size
         # self.gamma = 0.98
         # self.tau = 0.95
-        self.clip = 0.2
-        self.epochs = 12
+        self.clip = 0.1
+        self.epochs = 4
         self.running_mean = None
         self.episode_nums = []
         self.states = []
