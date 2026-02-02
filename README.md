@@ -32,3 +32,6 @@ Therefore for implementation I need:
 2) Store initial states
 3) Count advantages and distribute them to steps
 4) Make sure updates are only done after episodes not within episodes like sometimes in PPO
+
+---
+In the beginning action probabilities are 50/50. Then stick gets a larger reward as hitting only works when the subsequent actions are ok, which they are not when starting the training process. Therefore, probabilities shift so that hitting is unlikely, e.g. 5% or less, and at this point reward is actually pretty equal as the policy improved. Then eventually reward is higher for hitting, but hitting happens so rarely (state probability x hitting probability), that it is not able to gather enough evidence to change the previous policy, possibly no matter how long it is trained(?). To me it is currently unclear if more training could fix the issue or if it is stuck. To test this hypothesis better data is needed of how the action probs evolve. I'll set up better tracking with W&B and come back to this with better data.
