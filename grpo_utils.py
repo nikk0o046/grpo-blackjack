@@ -97,6 +97,48 @@ def create_grids_nn(policy, usable_ace=False):
 
     return policy_matrix
 
+
+def create_hit_prob_grid(policy, usable_ace=False):
+    """
+    Build a grid with the model's probability of taking the Hit action.
+
+    Args:
+        policy: trained policy network.
+        usable_ace (bool): whether to evaluate the grid with a usable ace.
+
+    Returns:
+        np.ndarray: probability of Hit for each (player_sum, dealer_card).
+                    Shape matches the policy grid used in create_grids_nn.
+    """
+    policy.eval()
+    hit_prob = {}
+
+    for player_sum in range(12, 22):
+        for dealer_card in range(1, 11):
+            obs = np.array([player_sum, dealer_card, int(usable_ace)], dtype=np.float32)
+            obs_t = torch.tensor(obs).unsqueeze(0).to(next(policy.parameters()).device)
+
+            with torch.no_grad():
+                action_dist = policy(obs_t)
+                # In Gym Blackjack: action index 0 = stick, 1 = hit
+                prob_hit = float(action_dist.probs[0, 1].item())
+
+            hit_prob[(player_sum, dealer_card, usable_ace)] = prob_hit
+
+    player_grid, dealer_grid = np.meshgrid(
+        np.arange(12, 22),
+        np.arange(1, 11),
+    )
+
+    prob_matrix = np.apply_along_axis(
+        lambda arr: hit_prob[(arr[0], arr[1], usable_ace)],
+        axis=2,
+        arr=np.dstack([player_grid, dealer_grid]),
+    )
+
+    return prob_matrix
+
+
 # Source: https://gymnasium.farama.org/v0.26.3/tutorials/blackjack_tutorial/
 def create_plots(policy_grid, title: str):
     """Creates a plot showing the policy (which action to take in each state)."""
@@ -119,3 +161,52 @@ def create_plots(policy_grid, title: str):
     ]
     ax.legend(handles=legend_elements, bbox_to_anchor=(1.3, 1))
     return fig
+
+
+def create_hit_prob_plot(prob_grid, title: str):
+    """
+    Plot a heatmap of the Hit action probability for each state.
+    """
+    fig = plt.figure(figsize=(8, 6))
+    fig.suptitle(title, fontsize=16)
+
+    ax = sns.heatmap(
+        prob_grid,
+        linewidth=0,
+        cmap="YlGnBu",
+        cbar=True,
+        vmin=0.0,
+        vmax=1.0,
+        annot=True,
+        fmt=".2f",
+    )
+    ax.set_title(f"Hit probability: {title}")
+    ax.set_xlabel("Player sum")
+    ax.set_ylabel("Dealer showing")
+    ax.set_xticklabels(range(12, 22))
+    ax.set_yticklabels(["A"] + list(range(2, 11)), fontsize=12)
+    return fig
+
+
+def load_trained_policy(model_path, state_space=3, action_space=2, hidden_size=16, device="cpu"):
+    """
+    Load a trained Policy from disk.
+
+    Args:
+        model_path (str or Path): path to the saved params .pt file.
+        state_space (int): observation dimension (default 3 for Blackjack).
+        action_space (int): action dimension (default 2 for Blackjack).
+        hidden_size (int): hidden layer width used during training.
+        device (str): torch device to map the weights to.
+
+    Returns:
+        Policy: initialized and loaded model in eval mode.
+    """
+    from grpo_blackjack_agent import Policy  # local import to avoid cycles
+
+    policy = Policy(state_space, action_space, hidden_size=hidden_size)
+    state_dict = torch.load(model_path, map_location=device)
+    policy.load_state_dict(state_dict)
+    policy.to(device)
+    policy.eval()
+    return policy
