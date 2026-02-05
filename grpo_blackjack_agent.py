@@ -36,14 +36,20 @@ class Policy(torch.nn.Module):
 
 
 class Agent(object):
-    def __init__(self, policy, batch_size=64, silent=False):
+    def __init__(
+        self,
+        policy,
+        batch_size=64,
+        silent=False,
+        clip = 0.1
+        ):
         self.train_device = "cuda"  # ""cuda" if torch.cuda.is_available() else "cpu"
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         self.batch_size = batch_size
         # self.gamma = 0.98
         # self.tau = 0.95
-        self.clip = 0.1
+        self.clip = clip
         self.epochs = 4
         self.running_mean = None
         self.episode_nums = []
@@ -69,6 +75,8 @@ class Agent(object):
         self.dones = torch.stack(self.dones).squeeze().to(self.train_device)
         self.action_log_probs = torch.stack(self.action_log_probs).squeeze().to(self.train_device)
 
+        state_stats = self.calculate_stats()
+
         for _ in range(self.epochs):
             self.grpo_epoch()
 
@@ -84,9 +92,85 @@ class Agent(object):
         self.action_log_probs = []
         if not self.silent:
             print("Updating finished!")
+        
+        return state_stats
+
+    def calculate_stats(self) -> dict:
+        # For all states I want: state visits, mean reward, mean advantage, hit probability
+        # state visits, and reward should be available easily from compute advantages.
+        # mean advantage would be for both actions? they are complements?
+
+        # Total average reward across episodes (top-level metric)
+        episode_final_rewards = [float(self.rewards[i].item()) for i in range(len(self.states)) if self.dones[i]]
+        avg_reward = float(np.mean(episode_final_rewards))
+
+        # State stats: possible states
+        all_states = [(i, j, False) for i in range(12, 22) for j in range(1, 11)]
+        all_states += [(i, j, True) for i in range(12, 22) for j in range(1, 11)]
+        state_stats = {
+            state: {
+                "visits": 0,
+                "reward_sum": 0.0,
+                "actions": {
+                    0: {"visits": 0, "reward_sum": 0.0, "adv_sum": 0.0},
+                    1: {"visits": 0, "reward_sum": 0.0, "adv_sum": 0.0},
+                },
+            }
+            for state in all_states
+        }
+        state_stats.update({"avg_reward": avg_reward})
+
+        for i in range(len(self.states)):
+            key = tuple(self.states[i].tolist())  # from tensor to hashable tuple e.g. (4, 12, True,)
+            if key not in all_states:
+                continue  # skips done states where no actions are possible
+
+            action = int(self.actions[i].item())
+            reward = float(self.rewards[i].item())
+            advantage = float(self.advantages[i])
+
+            # per-state aggregates
+            state_stats[key]["visits"] += 1
+            state_stats[key]["reward_sum"] += reward
+
+            # per-action aggregates within the state
+            state_stats[key]["actions"][action]["visits"] += 1
+            state_stats[key]["actions"][action]["reward_sum"] += reward
+            state_stats[key]["actions"][action]["adv_sum"] += advantage
+
+            # store both action probabilities once per state
+            if "action_probs" not in state_stats[key]:
+                chosen_prob = torch.exp(self.action_log_probs[i]).item()  # p(chosen_action | state)
+                if action == 0:
+                    p0 = chosen_prob
+                    p1 = 1.0 - chosen_prob
+                else:
+                    p1 = chosen_prob
+                    p0 = 1.0 - chosen_prob
+
+                state_stats[key]["action_probs"] = {0: p0, 1: p1}
+
+        # turn sums into means
+        for state, stats in state_stats.items():
+            visits = stats["visits"]
+            if visits > 0:
+                stats["mean_reward"] = stats["reward_sum"] / visits
+            else:
+                stats["mean_reward"] = 0.0
+
+            for action, a_stats in stats["actions"].items():
+                a_visits = a_stats["visits"]
+                if a_visits > 0:
+                    a_stats["mean_reward"] = a_stats["reward_sum"] / a_visits
+                    a_stats["mean_advantage"] = a_stats["adv_sum"] / a_visits
+                else:
+                    a_stats["mean_reward"] = 0.0
+                    a_stats["mean_advantage"] = 0.0
+
+        return state_stats
 
     def compute_advantages(self) -> list:
-        # 1. group episodes by starting state
+        # 1. group episode rewards by starting state
         # 2. calculate average reward and std of rewards for every group
         # 3. loop over all final steps and calculate advantage as episode (reward - avg reward) / std
         # 4. distribute this reward to all time steps
@@ -95,7 +179,7 @@ class Agent(object):
         state_rewards = {}
         for i in range(len(self.states)):
             if self.dones[i]:
-                key = tuple(self.starting_states[i].tolist())
+                key = tuple(self.starting_states[i].tolist())  # from tensor to hashable tuple e.g. (4, 12, True,)
                 
                 final_reward = self.rewards[i].item()
                 if key not in state_rewards:
@@ -116,6 +200,7 @@ class Agent(object):
             if self.dones[i]:
                 key = tuple(self.starting_states[i].tolist())
                 # calculate advantage, avoid zero division error
+                # could be optimized by calculating advantage just once for both actions
                 advantage = (self.rewards[i].item() - state_stats[key]["mean"]) / max(state_stats[key]["std"], 1e-8)
                 episode_advantages.update({self.episode_nums[i]: advantage})
  
