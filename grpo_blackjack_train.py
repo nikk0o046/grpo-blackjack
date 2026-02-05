@@ -1,11 +1,18 @@
 from collections import deque
-import time, torch
+import os
+import torch
 import gymnasium as gym
+import numpy as np 
+from pathlib import Path
+from dotenv import load_dotenv
+import wandb
+
 import utils as u
 from grpo_blackjack_agent import Agent, Policy
-import numpy as np 
 
-from pathlib import Path
+load_dotenv()
+wandb.login(key=os.environ["WANDB_APIKEY"])
+
 work_dir = Path().cwd()/'results'
 
 
@@ -20,8 +27,6 @@ def setup(cfg_args={}, print_info=False):
     
     print("Numpy/Torch/Random Seed: ", seed)
     u.set_seed(seed) # set seed
-    
-    run_id = int(time.time())
 
     # create folders if needed
     if cfg["save_model"]: 
@@ -55,8 +60,8 @@ def setup(cfg_args={}, print_info=False):
     observation_space_dim = 3
 
     # Instantiate agent and its policy
-    policy = Policy(observation_space_dim, action_space_dim)
-    agent = Agent(policy, cfg["batch_size"])
+    policy = Policy(observation_space_dim, action_space_dim, cfg["hidden_size"])
+    agent = Agent(policy, cfg["batch_size"], cfg["silent"], cfg["clip"])
     
     # Print some stuff
     if print_info:
@@ -101,8 +106,10 @@ def train_iteration(agent, env, episode_num, max_episode_steps=200, seed=None):
 
 # Training
 def train(cfg_args={}):
-        
     env, policy, agent, cfg = setup(cfg_args=cfg_args, print_info=True)
+
+    run = wandb.init(project="grpo-blackjack", config=cfg)
+
     num_updates = 0
 
     if cfg["save_logging"]: 
@@ -117,8 +124,10 @@ def train(cfg_args={}):
 
         # Update the policy, if we have enough data
         if len(agent.states) > cfg["min_update_samples"]:
-            agent.update_policy()
+            state_stats = agent.update_policy()
             num_updates += 1
+            state_stats = {str(k): v for k, v in state_stats.items()}
+            run.log({"state_stats": state_stats}, step = ep)
         
         train_info.update({'num_updates': num_updates})
         train_info.update({'episodes': ep})
@@ -127,7 +136,7 @@ def train(cfg_args={}):
         if not cfg["silent"]:
             if ep % reporting_interval == 0:
                 avg_reward = float(np.mean(recent_rewards))
-                print(f"Episode {ep} finished. Average reward of last {reporting_interval} steps: {avg_reward} ({train_info['timesteps']} timesteps)")
+                print(f"Episode {ep} finished. Average reward of last {reporting_interval} steps: {avg_reward}")
 
         if cfg["save_logging"]:
             L.log(**train_info)
