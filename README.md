@@ -5,13 +5,13 @@ This readme file works both as my notes for the project and as an explanation fo
 
 ## Goal of this project
 
-The primary goal is hands-on learning of the GRPO algorithm used in the famous DeepSeek model.
+The primary goal is hands-on learning of the Group Relative Policy Optimization (GRPO) algorithm used in the famous DeepSeek model.
 
-## Implementation
+## Background
 
-A critical element of this group relative policy optimization is that even from your starting point you need a way to gain rewards in order to learn. They use a pre-trained LLM as a reference policy which is already capable of solving some of their training problems some of the time. I want to go for a small problem just to check if I can get this algorithm to converge to a good solution and I don't have a pre-trained model to start with or a lot of compute. In my opinion going Blackjack would be a good problem for this use case as even with a random policy it will win some of the time.
+A critical element of the GRPO algorithm is that even from your starting point you need a way to gain rewards in order to learn. The authors use a pre-trained LLM as a reference policy which is already capable of solving some of their training problems some of the time. I want to go for a small problem just to check if I can get this algorithm to converge to a good solution and I don't have a pre-trained model to start with or a lot of compute. In my opinion Blackjack would be a good problem for this use case as even with a random policy it will win some of the time thus enabling it to start learning. Gymnasium conveniently has a RL environment for Blackjack which I make use of.
 
-Since I start with a random policy I can drop the whole KL divergence term in the formula as there is no need to keep it regulated towards a pre-trained model.
+In Deepseek's implementation they regulate the model to not drift too far away from the reference policy using KL Divergence term. Since I start with a random policy I can drop the whole KL divergence term in the formula as there is no need to keep it regulated towards a pre-trained model.
 
 <p align="center">
   <img src="images/grpo_objective_deepseek.png" width="45%">
@@ -20,13 +20,11 @@ Since I start with a random policy I can drop the whole KL divergence term in th
   <sub><em> DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning: https://arxiv.org/pdf/2501.12948 </em></sub>
 </p>
 
-To interact with an environment I will use an existing blackjack implemention e.g. from gymnasium package.
-
-Also, it would make sense to first run tests with a known solution to the problem to make sure everything is running smoothly. Once I have verified I can get an existing implementation to converge to an optimal policy I can start tweaking it and implementing this GRPO approach which I'm not familiar has been implemented before.
+The remaining algorithm is just a modification from the popular PPO algorithm to reduce the resource consumption. The difference really boils down to the advantage term *A*<sub>i</sub>. While the PPO algorithm needs to have another huge model (in case of LLMs) to estimate the value of each action outcome, GRPO foregoes this altogether and just makes groups out of similar trajectories and calculates the advantage as the reward relative to the group mean.
 
 One thing to note is that this surely is NOT the optimal solution for blackjack - GRPO algorithm is in many ways wasteful, but for some problems it is one of the only ones that works without supervision. Therefore it is not as relevant to benchmark it against the speed of some of the other algorithms, but instead focus on if it can reach the same end result through a different reward scheme.
 
-
+Since GRPO is newer and not a widely used solution it makes sense to first run tests with a known solution to the problem to make sure everything in the environment etc. is running smoothly without bugs. I took an existing PPO implementation from a university RL course for the Cartpole environment, modified it for Blackjack and it converged to a reasonable policy.
 
 ---
 
@@ -82,7 +80,3 @@ This is strong evidence that 2 million episodes simply were not enough for the p
 <p align="center">
   <img src="images/run_1_loss.png" width="40%">
 </p>
-
-
----
-In the beginning action probabilities are 50/50. Then stick gets a larger reward as hitting only works when the subsequent actions are ok, which they are not when starting the training process. Therefore, probabilities shift so that hitting is unlikely, e.g. 5% or less, and at this point reward is actually pretty equal as the policy improved. Then eventually reward is higher for hitting, but hitting happens so rarely (state probability x hitting probability), that it is not able to gather enough evidence to change the previous policy, possibly no matter how long it is trained(?). To me it is currently unclear if more training could fix the issue or if it is stuck. To test this hypothesis better data is needed of how the action probs evolve. I'll set up better tracking with W&B and come back to this with better data.
