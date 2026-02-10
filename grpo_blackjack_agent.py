@@ -118,7 +118,6 @@ class Agent(object):
             }
             for state in all_states
         }
-        state_stats.update({"avg_reward": avg_reward})
 
         for i in range(len(self.states)):
             key = tuple(self.states[i].tolist())  # from tensor to hashable tuple e.g. (4, 12, True,)
@@ -167,6 +166,7 @@ class Agent(object):
                     a_stats["mean_reward"] = 0.0
                     a_stats["mean_advantage"] = 0.0
 
+        state_stats.update({"avg_reward": avg_reward})
         return state_stats
 
     def compute_advantages(self) -> list:
