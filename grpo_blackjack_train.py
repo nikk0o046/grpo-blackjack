@@ -155,9 +155,9 @@ def train(cfg_args={}):
     
 # Function to test a trained policy
     
-def test(episodes, cfg_path, cfg_args={}):
+def test(episodes, cfg_args={}):
     
-    env, policy, agent, cfg  = setup(cfg_path, cfg_args=cfg_args, print_info=False)
+    env, policy, agent, cfg  = setup(cfg_args=cfg_args, print_info=False)
     
     # Testing 
     model_path = work_dir/'model'/f'{cfg["model_name"]}_params.pt'
@@ -170,13 +170,8 @@ def test(episodes, cfg_path, cfg_args={}):
     print("Testing...")
     total_test_reward, total_test_len = 0, 0
     for ep in range(episodes):
-        done = False
-        if cfg["seed"] == None:
-            seed = np.random.randint(low=1, high=1000)
-        else:
-            seed = cfg["seed"]
-            
-        observation, _ = env.reset(seed=seed)
+        done = False   
+        observation, _ = env.reset()
 
         test_reward, test_len = 0, 0
         for t in range(cfg["max_episode_steps"]):
@@ -193,6 +188,7 @@ def test(episodes, cfg_path, cfg_args={}):
                 break
         total_test_reward += test_reward
         total_test_len += test_len
-        print("Test ep reward:", test_reward, "seed:", seed)
+        if ep % 5000 == 0:
+            print(f"Test episode number: {ep}")
     print("Average test reward:", total_test_reward/episodes, "episode length:", total_test_len/episodes)
     return total_test_reward/episodes
